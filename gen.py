@@ -218,6 +218,12 @@ def class_def(children=None):
                     yield ")"
                 if fn.const:
                     yield "const"
+                if isinstance(fn, Constructor):
+                    if cls.bases:
+                        yield f"{ indent }: { cls.bases[0].cls }()"
+                        for base in cls.bases[1:]:
+                            yield f"{ indent }, { base.cls }()"
+
                 yield "{"
                 yield f"{ indent }std::cout << { fun_def_debug(ns, fn, cls) } << std::endl;"
                 yield f"}} // method { cls.name }::{ fun_name(fn, cls) }"
@@ -510,8 +516,11 @@ class Class(Obj): #(HeaderFwd, Header, Source):
             gen_filename(inc_dir, ns, self.name, '.hpp'),
             header(ns, self, '.hpp')
         )
+        src_ns = ns
+        if 'kx' in ns:
+            src_ns = [x for x in ns if x != 'kx']
         write_file(
-            gen_filename(src_dir, ns, self.name, '.cpp'),
+            gen_filename(src_dir, src_ns, self.name, '.cpp'),
             source(ns, self, '.cpp')
         )
 
@@ -563,14 +572,29 @@ configs = [
                             virtual=True,
                             abstract=True
                         ),
-
-                ]),  # Class State
+                    ]  # methods
+                ),  # Class State
             ]),  # Namespace state
         ])  # Namespace kx
     ],
     'include_dir': 'include',
     'source_dir': 'src',
-    },
+    },  # kx
+    {
+    'data': [
+        Namespace('ex43',[
+            Class('MenuState',
+                bases=Type(['kx', 'state'], 'State'),
+                methods=[
+                    Constructor(),
+                    Destructor(),
+                ],  # methods
+            )  # Class MenuState
+        ])  # Namespace ex43
+    ],
+    'include_dir': 'examples/ex43',
+    'source_dir': 'examples/ex43',
+    },  # case study 4.3
 ]
 
 
