@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import copy
+import itertools
 import os
 import re
 
@@ -66,9 +68,7 @@ def namespace(children=None):
 def class_fwd_decl(child=None):
     print(f"child={child}")
     def _class_fwd_decl(ns, cls, suffix):
-        yield "    // Forward declaration"
-        yield f"    class { cls.name };"
-        yield ""
+        yield from cls.fwd_decl(ns)
         if child:
             yield from child(ns, cls, suffix)
 
@@ -100,30 +100,37 @@ def fun_name(fn, cls=None):
             fn_name = fn.name
         return fn_name
 
-def gen_fun_decl(indent, i_mul, cls=None):
-    if cls:
-        for fn in cls.methods:
-            yield from gen_doc(indent*i_mul, func=fn)
-            if fn.virtual:
-                yield f"{ indent*i_mul }virtual"
-            if fn.return_type:
-                yield f"{ indent*i_mul }{ fn.return_type.fmt() }"
-
-            yield f"{ indent*i_mul }{ fun_name(fn, cls) }(" + ("" if fn.args else (")" if fn.const or fn.abstract else ");"))
-            if fn.args:
-                for i, arg in enumerate(fn.args):
-                    yield f"{ indent*(i_mul+1) }{ arg.type.fmt() } { arg.name }" + ("" if i == (len(fn.args) - 1) else ",")
-                yield f"{ indent*i_mul }" + (")" if fn.const or fn.abstract else ");")
-            ending = None
-            if fn.const:
-                if fn.abstract:
-                    ending = "const = 0;"
-                else:
-                    ending = "const;"
-            elif fn.abstract:
-                ending = "= 0;"
-            if ending:
-                yield f"{ indent*i_mul }{ ending }"
+def gen_fun_decl(fn, indent=None, i_mul=1, cls=None):
+    if indent is None:
+        indent = " "*4
+    yield from gen_doc(indent*i_mul, func=fn)
+    if isinstance(fn, Method) and fn.virtual:
+        yield f"{ indent*i_mul }virtual"
+    if fn.return_type:
+        yield f"{ indent*i_mul }{ fn.return_type.fmt() }"
+    if isinstance(fn, Method):
+        yield f"{ indent*i_mul }{ fun_name(fn, cls) }(" + ("" if fn.args else (")" if fn.const or fn.abstract else ");"))
+    else:
+        yield f"{ indent*i_mul }{ fun_name(fn, cls) }(" + ("" if fn.args else ");")
+    if fn.args:
+        for i, arg in enumerate(fn.args):
+            yield f"{ indent*(i_mul+1) }{ arg.type.fmt() } { arg.name }" + ("" if i == (len(fn.args) - 1) else ",")
+        if isinstance(fn, Method):
+            yield f"{ indent*i_mul }" + (")" if fn.const or fn.abstract else ");")
+        else:
+            yield f"{ indent*i_mul });"
+            return
+    if isinstance(fn, Method):
+        ending = None
+        if fn.const:
+            if fn.abstract:
+                ending = "const = 0;"
+            else:
+                ending = "const;"
+        elif fn.abstract:
+            ending = "= 0;"
+        if ending:
+            yield f"{ indent*i_mul }{ ending }"
 
 
 def include_self(children=None):
@@ -152,27 +159,49 @@ def class_decl(child=None):
         yield f"{ indent }{{"
         if cls.methods:
             yield f"{ indent }public:"
-            yield from gen_fun_decl(indent, 2, cls)
+            for method in cls.methods:
+                yield from gen_fun_decl(method, indent=indent, i_mul=2, cls=cls)
+        if cls.members:
+            yield f"{ indent }public:"
+            for member in cls.members:
+                yield f"{ indent*2 }/** A variable."
+                yield f"{ indent*2 }  *"
+                yield f"{ indent*2 }  * Details."
+                yield f"{ indent*2 }  */"
+                yield f"{ indent*2 }{ member.type.fmt() } { member.name }"
         yield f"{ indent }}}; // class { cls.name }"
         if child:
             yield from child(ns, cls, suffix)
 
     return _class_decl
 
+
+def module_decl(children=None):
+    children = ensure_list(children)
+
+    def _module_decl(ns, mod, suffix):
+        yield from mod.decl(ns)
+
+        for child in children:
+            yield from child(ns, mod, suffix)
+    return _module_decl
+
+
 def include_dep(dep, suffix):
     if isinstance(dep, Primitive):
         return
 
+    if suffix.startswith('_fwd'):
+        return
     if suffix.endswith('.hpp'):
-        if isinstance(dep, FwdDep):
-            yield dep.type.as_fwd_include()
-        elif isinstance(dep, SrcDep):
-            return
-        else:
-            yield dep.type.as_include()
+
+        inc = dep.as_header_include()
+        if inc:
+            yield inc
     else:
-        if isinstance(dep, (FwdDep, SrcDep)):
-            yield dep.type.as_include()
+        inc = dep.as_src_include()
+        if inc:
+            yield inc
 
 
 def include_deps(children=None):
@@ -219,13 +248,15 @@ def class_def(children=None):
                 if fn.const:
                     yield "const"
                 if isinstance(fn, Constructor):
-                    if cls.bases:
-                        yield f"{ indent }: { cls.bases[0].cls }()"
-                        for base in cls.bases[1:]:
-                            yield f"{ indent }, { base.cls }()"
+                    inits = itertools.chain(
+                        (f"{ b.cls }()" for b in cls.bases),
+                        (f"{ m.name }({ 'nullptr' if isinstance(m.type, Pointer) else '' })" for m in cls.members )
+                    )
+                    for i, init in enumerate(inits):
+                        yield f"{ indent }{ ':' if i == 0 else ',' } { init }"
 
                 yield "{"
-                yield f"{ indent }std::cout << { fun_def_debug(ns, fn, cls) } << std::endl;"
+                yield f'{ indent }std::cout << "{ fun_def_debug(ns, fn, cls) }" << std::endl;'
                 yield f"}} // method { cls.name }::{ fun_name(fn, cls) }"
                 yield ""
 
@@ -233,15 +264,34 @@ def class_def(children=None):
             yield from child(ns, cls, suffix)
     return _class_def
 
+
+def module_def(children=None):
+    children = ensure_list(children)
+
+    def _module_def(ns, mod, suffix):
+        yield from mod.src_def(ns)
+
+        for child in children:
+            yield from child(ns, mod, suffix)
+
+    return _module_def
+
+
 header_fwd = include_guard(namespace(class_fwd_decl()))
 header = include_guard([
     include_deps(),
-    namespace(class_decl())
+    namespace(
+        #class_decl()
+        module_decl()
+    )
     ])
 #header_fwd = include_guard(class_fwd_decl())
 source = include_self([
     include_deps(),
-    namespace(class_def())
+    namespace(
+        #class_def()
+        module_def()
+    )
     ])
 
 
@@ -253,7 +303,58 @@ def write_file(filename, content):
 
 
 class Obj:
+    def __init__(self):
+        self.deps = [SrcDep(Std("iostreams"))]
+
     def gen(self, ns=[], inc_dir='include', src_dir='src'):
+        pass
+
+    def fwd_decl(self, ns, indent=None):
+        pass
+
+    def decl(self, ns, indent=None):
+        pass
+
+    def src_def(self, ns, indent=None):
+        pass
+
+    def add_dep(self, x):
+        if x is None:
+            return
+        if isinstance(x, Primitive):
+            return
+
+        if isinstance(x, Type):
+            if isinstance(x, Pointer):
+                y = FwdDep(x)
+            else:
+                y = HardDep(x)
+        elif isinstance(x, Dep):
+            y = x
+        else:
+            return
+
+        for i, v in enumerate(self.deps):
+            if y == v:
+                if isinstance(v, SrcDep) and isinstance(y, FwdDep):
+                    self.deps[i] = y
+                    break
+                elif isinstance(v, FwdDep) and isinstance(y, HardDep):
+                    self.deps[i] = y
+                    break
+        else:
+            self.deps.append(y)
+        print(f"deps = {self.deps}")
+
+
+class Fmtable:
+    def fmt_fwd_decl(self):
+        pass
+
+    def fmt_decl(self):
+        pass
+
+    def fmt_def(self):
         pass
 
 
@@ -323,7 +424,7 @@ class Source(CodeFile):
         super().__init__(*args, **kwargs)
 
 
-class Function:
+class Function(Obj):
     def __init__(self,
                  name,
                  return_type,
@@ -335,6 +436,25 @@ class Function:
         self.template = template
         self.return_type = return_type
         self.args = args
+        self.abstract = False
+
+    def decl(self, ns, indent=None):
+        yield from gen_fun_decl(self, indent=indent)
+
+    def src_def(self, ns, indent=None):
+        indent = " "*4
+        if self.return_type:
+            yield f"{ self.return_type.fmt() }"
+        yield f"{ self.name }(" + ("" if self.args else ")")
+        if self.args:
+            for i, arg in enumerate(self.args):
+                yield f"{ indent }{ arg.type.fmt() } { arg.name }" + ("" if i == (len(self.args) - 1) else ",")
+            yield ")"
+
+        yield "{"
+        yield f'{ indent }std::cout << "{ fun_def_debug(ns, self) }" << std::endl;'
+        yield f"}} // function { self.name }"
+        yield ""
 
 
 class Method(Function):
@@ -386,24 +506,20 @@ class Destructor(Method):
             virtual=virtual,
         )
 
-class Primitive:
-    def __init__(self, cls):
-        self.cls = cls
-
-    def fmt(self) -> str:
-        return f"{ self.cls }"
-
-
-void = Primitive('void')
-
 
 class Type:
-    def __init__(self, ns, cls):
-        self.ns = ensure_list(ns)
-        self.cls = cls
+    def __init__(self, *args):
+        self.cls = args[-1]
+        self.ns = args[:-1]
+
+    def __repr__(self):
+        return f"Type({self.ns}, {self.cls})"
 
     def fmt(self) -> str:
-        return f"{ '::'.join(self.ns) }::{ self.cls }"
+        if self.ns:
+            return f"{ '::'.join(list(self.ns)) }::{ self.cls }"
+        else:
+            return f"{ self.cls }"
 
     def as_include(self):
         return f'#include "{ gen_filename(None, self.ns, self.cls, ".hpp") }"'
@@ -411,6 +527,16 @@ class Type:
     def as_fwd_include(self):
         return f'#include "{ gen_filename(None, self.ns, self.cls, "_fwd.hpp") }"'
 
+
+class Primitive(Type):
+    def __init__(self, cls):
+        super().__init__(cls)
+
+    def fmt(self) -> str:
+        return f"{ self.cls }"
+
+
+void = Primitive('void')
 
 class Pointer(Type):
     def __init__(self, *args):
@@ -422,13 +548,29 @@ class Pointer(Type):
 
 class Std(Type):
     def __init__(self, header):
-        super().__init__(ns=None, cls=header)
+        super().__init__(header)
 
     def as_include(self):
         return f"#include <{ self.cls }>"
 
     def as_fwd_include(self):
         return
+
+
+class TypeDef(Obj):
+    def __init__(self, type_, name):
+        self.type = type_
+        self.name = name
+
+    def fmt(self):
+        return f"typedef {self.type.fmt()} {self.name};"
+
+    def decl(self, indent=None):
+        if indent is None:
+            indent = "    "
+
+        yield f"{indent}{self.fmt()}"
+
 
 class Dep:
     def __init__(self, type_):
@@ -437,21 +579,53 @@ class Dep:
     def __repr__(self):
         return f"Dep({self.type})"
 
+    def __eq__(self, other):
+        return isinstance(other, Dep) and self.type == other.type
 
-class FwdDep(Dep):
+    def __hash__(self):
+        return hash(repr(self))
+
+    def as_header_include(self):
+        pass
+
+    def as_src_include(self):
+        pass
+
+
+class HardDep(Dep):
+    def __init__(self, type_):
+        super().__init__(type_)
+
+    def __repr__(self):
+        return f"HardDep({self.type})"
+
+    def as_header_include(self):
+        return self.type.as_include()
+
+
+class FwdDep(HardDep):
     def __init__(self, type_):
         super().__init__(type_)
 
     def __repr__(self):
         return f"FwdDep({self.type})"
 
+    def as_header_include(self):
+        return self.type.as_fwd_include()
 
-class SrcDep(Dep):
+    def as_src_include(self):
+        return self.type.as_include()
+
+
+class SrcDep(FwdDep):
     def __init__(self, type_):
         super().__init__(type_)
 
     def __repr__(self):
         return f"SrcDep({self.type})"
+
+    def as_src_include(self):
+        return self.type.as_include()
 
 
 class Arg:
@@ -467,43 +641,42 @@ class Class(Obj): #(HeaderFwd, Header, Source):
                  virtual=True,
                  methods=None,
                  bases=None,
+                 members=None,
                 ):
-        #super().__init__(classes=[self])
+        super().__init__()
         self.name = name
         self.virtual = virtual
         self.methods = ensure_list(methods)
 
         self.bases = ensure_list(bases)
-        self.deps = [SrcDep(Std('iostreams'))]
-        fwds = []
-        deps = []
-        srcdeps = []
-
-        def add_dep(x):
-            if x is None:
-                return
-            if not isinstance(x, Primitive):
-                if isinstance(x, Pointer):
-                    fwds.append(FwdDep(x))
-                else:
-                    deps.append(Dep(x))
+        self.members = ensure_list(members)
 
         for m in self.methods:
-            add_dep(m.return_type)
+            self.add_dep(m.return_type)
             for a in m.args:
-                add_dep(a.type)
+                self.add_dep(a.type)
 
-        if fwds:
-            self.deps.extend(fwds)
-        if deps:
-            self.deps.extend(deps)
-        for b in self.bases:
-            self.deps.append(Dep(b))
+        for m in self.members:
+            self.add_dep(m.type)
+
         print(f"{self!r}")
         print(f"deps = { self.deps }")
 
     def __repr__(self):
         return f"Class({self.name}, bases={self.bases}, methods={self.methods})"
+
+    def fwd_decl(self, ns, indent=None):
+        yield "    // Forward declaration"
+        yield f"    class { self.name };"
+        yield ""
+
+    def decl(self, ns, indent=None):
+        _class_decl = class_decl()
+        yield from _class_decl(ns, self, ".hpp")
+
+    def src_def(self, ns, indent=None):
+        _class_def = class_def()
+        yield from _class_def(ns, self, ".hpp")
 
     def gen(self, ns, inc_dir='include', src_dir='src'):
         print(f"Class { '::'.join(ns) }::{ self.name }")
@@ -525,10 +698,133 @@ class Class(Obj): #(HeaderFwd, Header, Source):
         )
 
 
+class Module(Obj): #(HeaderFwd, Header, Source):
+    def __init__(self,
+                 name,
+                 *ents,
+                ):
+        super().__init__()
+        self.name = name
+        self.ents = ents
+        self.deps = [SrcDep(Std('iostreams'))]
+
+
+
+        for m in self.ents:
+            if isinstance(m, Function):
+                self.add_dep(m.return_type)
+                for a in m.args:
+                    self.add_dep(a.type)
+            elif isinstance(m, TypeDef):
+                self.add_dep(m.type)
+            elif isinstance(m, Class):
+                for d in m.deps:
+                    self.add_dep(d)
+
+        print(f"{self!r}")
+        print(f"deps = { self.deps }")
+
+    def __repr__(self):
+        return f"Module({self.name}, ents={self.ents})"
+
+    def fwd_decl(self, ns, indent=None):
+        for ent in self.ents:
+            ent_fwd_decl = ent.fwd_decl(ns)
+            if ent_fwd_decl:
+                yield from ent_fwd_decl
+
+    def decl(self, ns, indent=None):
+        for ent in self.ents:
+            ent_decl = ent.decl(ns)
+            if ent_decl:
+                yield from ent_decl
+
+    def src_def(self, ns, indent=None):
+        for ent in self.ents:
+            ent_src_def = ent.src_def(ns)
+            if ent_src_def:
+                yield from ent_src_def
+
+    def gen(self, ns, inc_dir='include', src_dir='src'):
+        print(f"Module { '::'.join(ns) }::{ self.name }")
+        write_file(
+            gen_filename(inc_dir, ns, self.name, '_fwd.hpp'),
+            header_fwd(ns, self, '_fwd.hpp')
+        )
+
+        write_file(
+            gen_filename(inc_dir, ns, self.name, '.hpp'),
+            header(ns, self, '.hpp')
+        )
+        src_ns = ns
+        if 'kx' in ns:
+            src_ns = [x for x in ns if x != 'kx']
+        write_file(
+            gen_filename(src_dir, src_ns, self.name, '.cpp'),
+            source(ns, self, '.cpp')
+        )
+
+
+State_update_abstract = Method('update', void,
+    args=[
+        Arg(Type('kx', 'core','Time',), 't')
+    ],
+    const=False,
+    virtual=True,
+    abstract=True
+)
+
+State_update = copy.copy(State_update_abstract)
+State_update.abstract = False
+
+State_draw_abstract = Method('draw',void,
+    args=[
+        Arg(Pointer('kx', 'rend', 'Renderer'), 'renderer')
+    ],
+    const=True,
+    virtual=True,
+    abstract=True
+)
+
+State_draw = copy.copy(State_draw_abstract)
+State_draw.abstract = False
+
+State_on_enter = Method('on_enter', void, virtual=True)
+State_on_leave = Method('on_leave', void, virtual=True)
+
+StateFactory_create_abstract = Method('create',
+    Pointer(Type('kx', 'state', 'State')),
+    args=[
+        Arg(Pointer(Primitive('char const')), 'name')
+    ],
+    const=False,
+    virtual=False,
+    abstract=True
+)
+
+StateFactory_create = copy.copy(StateFactory_create_abstract)
+StateFactory_create.abstract = False
+
+StateManager_switch_to_state = Method('switch_to_state',
+    void,
+    args=[
+        Arg(Pointer('kx', 'state', 'State'), 'state')
+    ],
+)
+
+
 configs = [
     {
     'data': [
         Namespace('kx',[
+            Namespace('core',[
+                Module('time',
+                    TypeDef(Primitive('int'), 'Time'),
+                    Function('get_time',
+                        Primitive('Time')
+                    ),
+                ),  # Module time
+            ]),  # Namespace common
             Namespace('platform', [
                 Class('Application'),
             ]),  # Namespace platform
@@ -544,36 +840,33 @@ configs = [
                     methods=[
                         Constructor(),
                         Destructor(),
-                        Method('Update',
-                            void,
-                            args=[
-                                Arg(
-                                    Type(
-                                        ['kx', 'common'],
-                                        'Time',
-                                    ),
-                                    't'
-                            )],
-                            const=False,
-                            virtual=True,
-                            abstract=True
-                        ),
-                        Method('Draw',
-                            void,
-                            args=[
-                                Arg(
-                                    Pointer(
-                                        ['kx', 'rend'],
-                                        'Renderer',
-                                    ),
-                                    'renderer'
-                            )],
-                            const=True,
-                            virtual=True,
-                            abstract=True
-                        ),
+                        State_draw_abstract,
+                        State_update_abstract,
+                        State_on_enter,
+                        State_on_leave
                     ]  # methods
                 ),  # Class State
+                Class('StateManager',
+                    methods=[
+                        Constructor(),
+                        Destructor(),
+                        StateManager_switch_to_state,
+                    ],  # methods
+                    members=[
+                        Arg(
+                            Pointer(
+                                'kx', 'state',
+                                'State'
+                            ),
+                            'current_state'
+                        )
+                    ],  # members
+                ),  # Class StateManager
+                Class('StateFactory',
+                    methods=[
+                        StateFactory_create_abstract
+                    ],  # methods
+                ),  # Class StateFactory
             ]),  # Namespace state
         ])  # Namespace kx
     ],
@@ -583,13 +876,24 @@ configs = [
     {
     'data': [
         Namespace('ex43',[
+            Class('ConcreteStateFactory',
+                bases=Type('kx', 'state', 'StateFactory'),
+                methods=[
+                    Constructor(),
+                    StateFactory_create,
+                    ]
+            ),  # Class ConcreteStateFactory
             Class('MenuState',
-                bases=Type(['kx', 'state'], 'State'),
+                bases=Type('kx', 'state', 'State'),
                 methods=[
                     Constructor(),
                     Destructor(),
+                    State_update,
+                    State_draw,
+                    State_on_enter,
+                    State_on_leave
                 ],  # methods
-            )  # Class MenuState
+            ),  # Class MenuState
         ])  # Namespace ex43
     ],
     'include_dir': 'examples/ex43',
