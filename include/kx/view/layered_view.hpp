@@ -1,11 +1,11 @@
 #include <list>
 
 #include "kx/view/view.hpp"
+#include "kx/view/layered_position.hpp"
 
 namespace kx::view
 {
     class Context;
-    class LayeredPosition;
 
     class LayeredView : public View
     {

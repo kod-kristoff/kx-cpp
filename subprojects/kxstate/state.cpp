@@ -6,11 +6,11 @@ namespace kx::state
     {}
 
     /* virtual */
-    void State::update(Time dt)
+    void State::update(Time /*dt*/)
     {}
 
     /* virtual */
-    void State::draw(Renderer * renderer) const
+    void State::draw(rend::Renderer * /*renderer*/) const
     {}
 
     /* virtual */

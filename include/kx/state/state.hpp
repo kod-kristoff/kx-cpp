@@ -2,7 +2,7 @@
 #define KX_STATE_STATE_HPP
 
 #include "kx/rend/renderer_fwd.hpp"
-#include "kx/time.hpo"
+#include "kx/time.hpp"
 
 namespace kx::state
 {
@@ -12,14 +12,14 @@ namespace kx::state
         State() = default;
         virtual ~State();
 
-        virtual 
-        void 
+        virtual
+        void
         update(
             Time dt
         ) = 0;
-        
-        virtual 
-        void 
+
+        virtual
+        void
         draw(
             rend::Renderer * renderer
         ) const = 0;

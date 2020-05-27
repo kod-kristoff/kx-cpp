@@ -1,10 +1,10 @@
-project('kx_view', 'cpp',
+project('kxview', 'cpp',
     default_options: [
         'cpp_std=c++17',
     ]
 )
 
-incdir = include_directories('include')
+incdir = include_directories('../../include')
 
 kxview = library('kxview',
     sources: [

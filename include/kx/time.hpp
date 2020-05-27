@@ -3,7 +3,7 @@
 
 namespace kx
 {
-    typedef Time int;
+    typedef int Time;
 }
 
 #endif
