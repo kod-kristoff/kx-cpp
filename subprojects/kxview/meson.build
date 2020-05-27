@@ -1,14 +1,15 @@
-project('kxview', 'cpp',
+project('kx_view', 'cpp',
     default_options: [
         'cpp_std=c++17',
     ]
 )
 
-incdir = include_directories('../../include')
+incdir = include_directories('include')
 
-kx_view = library('kxview',
+kxview = library('kxview',
     sources: [
         'context.cpp',
+        'layered_view.cpp',
         'position.cpp',
         'rectangle.cpp',
         'view.cpp',
@@ -16,7 +17,7 @@ kx_view = library('kxview',
     include_directories: incdir,
 )
 
-kx_view_dep = declare_dependency(
+kxview_dep = declare_dependency(
     imclude_directories: incdir,
-    link_with: kx_view,
+    link_with: kxview,
 )

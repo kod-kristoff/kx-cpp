@@ -1,22 +1,19 @@
-project('kxview', 'cpp',
+project('kx_view', 'cpp',
     default_options: [
         'cpp_std=c++17',
     ]
 )
 
-incdir = include_directories('../../include')
+incdir = include_directories('include')
 
-kx_view = library('kxview',
+kxstate = library('kxstate',
     sources: [
-        'context.cpp',
-        'position.cpp',
-        'rectangle.cpp',
-        'view.cpp',
+        'state.cpp',
     ],
     include_directories: incdir,
 )
 
-kx_view_dep = declare_dependency(
+kxstate_dep = declare_dependency(
     imclude_directories: incdir,
-    link_with: kx_view,
+    link_with: kxstate,
 )
