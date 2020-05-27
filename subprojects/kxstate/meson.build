@@ -9,6 +9,7 @@ incdir = include_directories('../../include')
 kxstate = library('kxstate',
     sources: [
         'state.cpp',
+        'state_manager.cpp',
     ],
     include_directories: incdir,
 )

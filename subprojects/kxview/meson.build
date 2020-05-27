@@ -18,6 +18,6 @@ kxview = library('kxview',
 )
 
 kxview_dep = declare_dependency(
-    imclude_directories: incdir,
+    include_directories: incdir,
     link_with: kxview,
 )
