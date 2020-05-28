@@ -11,10 +11,18 @@ namespace kx::view
     {
     public:
         ~Rectangle();
-    public:
-        Position *  position;
-        Scalar      height;
-        Scalar      width;
+
+        inline Scalar height() const {return _height;}
+        inline Scalar width() const { return _width; }
+
+        inline Position const * position() const
+        {
+            return _position;
+        }
+    private:
+        Position *  _position;
+        Scalar      _height;
+        Scalar      _width;
     };
 }
 #endif
