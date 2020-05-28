@@ -6,9 +6,10 @@ project('kxview', 'cpp',
 
 incdir = include_directories('../../include')
 
-kx_view = library('kxview',
+kxview = library('kxview',
     sources: [
         'context.cpp',
+        'layered_view.cpp',
         'position.cpp',
         'rectangle.cpp',
         'view.cpp',
@@ -16,7 +17,7 @@ kx_view = library('kxview',
     include_directories: incdir,
 )
 
-kx_view_dep = declare_dependency(
-    imclude_directories: incdir,
-    link_with: kx_view,
+kxview_dep = declare_dependency(
+    include_directories: incdir,
+    link_with: kxview,
 )

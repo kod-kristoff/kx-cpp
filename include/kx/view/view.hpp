@@ -8,7 +8,7 @@
 namespace kx::view
 {
     class View;
-    typedef std::list<View *> view_list_type;
+    typedef std::list<View *> ViewList;
 
     class Context;
 
@@ -30,7 +30,7 @@ namespace kx::view
         void remove_all_children();
 
     private:
-        view_list_type children;
+        ViewList children;
     };
 }
 

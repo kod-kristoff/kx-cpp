@@ -11,7 +11,7 @@ namespace kx::view
     }
 
     /* virtual */
-    void LayeredView::render(Context * context)
+    void LayeredView::render(Context * /*context*/) const
     {
 
     }
