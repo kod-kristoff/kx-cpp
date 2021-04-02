@@ -16,3 +16,6 @@ kxstate_dep = kxstate_proj.get_variable('kxstate_dep')
 
 kxinput_proj = subproject('kxinput')
 kxinput_dep = kxinput_proj.get_variable('kxinput_dep')
+
+kxgui_proj = subproject('kxgui')
+kxgui_dep = kxgui_proj.get_variable('kxgui_dep')
