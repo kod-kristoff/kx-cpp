@@ -8,6 +8,7 @@ edition = "2018"
 
 [workspace]
 members = [
-    "subprojects/kx_state",
+    "apps/*",
+    "subprojects/kx_*",
 ]
 [dependencies]
